@@ -1,0 +1,49 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mcpguardlab"
+version = "0.1.0"
+description = "Verified MCP Security Validation Harness"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [
+    {name = "harmanhanjra"}
+]
+keywords = ["mcp", "security", "llm", "ai", "validation"]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+dev = [
+    "ruff>=0.1.0",
+    "bandit>=1.7.0",
+]
+
+[project.scripts]
+mcpguardlab-verify = "mcpguardlab.verify:main"
+mcpguardlab = "mcpguardlab.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mcpguardlab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM"]
+ignore = ["E501", "UP006", "UP035", "UP045"]
+
+[tool.bandit]
+skips = ["B101"]
