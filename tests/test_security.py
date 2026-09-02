@@ -107,6 +107,40 @@ class TestURIValidator:
         valid, error = validator.validate("example.com/path")
         assert not valid, "URI without scheme should be rejected"
 
+    @pytest.mark.parametrize(
+        "uri",
+        [
+            "https://localhost/admin",
+            "https://api.localhost/internal",
+            "https://127.0.0.1/secret",
+            "https://10.0.0.5/metadata",
+            "https://172.16.1.10/private",
+            "https://192.168.1.1/router",
+            "https://169.254.169.254/latest/meta-data/",
+            "https://[::1]/",
+        ],
+    )
+    def test_ssrf_targets_blocked(self, uri):
+        """HTTPS must not become an SSRF tunnel to local/private networks."""
+        validator = URIValidator()
+        valid, _ = validator.validate(uri)
+        assert not valid, f"SSRF target should be rejected: {uri}"
+
+    def test_https_credentials_blocked(self):
+        validator = URIValidator()
+        valid, _ = validator.validate("https://user:pass@example.com/path")
+        assert not valid
+
+    def test_public_https_literal_ip_allowed(self):
+        validator = URIValidator()
+        valid, error = validator.validate("https://8.8.8.8/dns-query")
+        assert valid, error
+
+    def test_oversized_uri_blocked(self):
+        validator = URIValidator()
+        valid, _ = validator.validate("https://example.com/" + ("a" * 9000))
+        assert not valid
+
 
 class TestPromptCleaner:
     """Test prompt injection detection."""
