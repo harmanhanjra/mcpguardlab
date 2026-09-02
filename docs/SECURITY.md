@@ -32,7 +32,9 @@
 
 ### 3. URI Validation
 - Whitelist allowed schemes
-- Reject absolute paths
+- Reject localhost, loopback, private, link-local, multicast, and unspecified literal IP targets for HTTPS
+- Reject credentials embedded in HTTPS URLs
+- Enforce URI length limits
 - Validate hostname format
 
 ### 4. Prompt Cleaning
@@ -58,6 +60,7 @@
 - CWE-78: OS Command Injection — Parameter sanitization
 - CWE-89: SQL Injection — Parameter sanitization
 - CWE-22: Path Traversal — URI validation
+- CWE-918: Server-Side Request Forgery (SSRF) — network-target validation
 - CWE-79: XSS — Prompt cleaning
 
 ## Accepted Risks
