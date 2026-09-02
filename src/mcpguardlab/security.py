@@ -1,7 +1,9 @@
 """Security guard for MCP requests."""
 
+import ipaddress
 import re
 from typing import List, Optional, Tuple
+from urllib.parse import urlparse
 
 
 # Safe tool name pattern: alphanumeric and underscores only
@@ -15,6 +17,8 @@ SQL_INJECTION = re.compile(r"('|\")?(--|#|;|' OR '|'|\" OR \")", re.IGNORECASE)
 # Allowed URI schemes
 ALLOWED_URI_SCHEMES = {'mcp', 'https', 'data', 'mcp+ws', 'mcp+wss'}
 FORBIDDEN_URI_SCHEMES = {'file', 'http', 'gopher', 'dict', 'ftp', 'ssh', 'telnet'}
+LOCAL_HOSTNAMES = {'localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback'}
+MAX_URI_LENGTH = 8192
 
 # Known prompt injection patterns
 INJECTION_PATTERNS = [
@@ -87,19 +91,25 @@ class URIValidator:
     """Validates resource URIs for security."""
 
     def validate(self, uri: str) -> Tuple[bool, str]:
-        """Validate URI. Returns (is_valid, error_message)."""
+        """Validate URI and block obvious SSRF targets.
+
+        This performs deterministic checks only; it intentionally does not resolve
+        DNS, because hostname resolution belongs at the network egress boundary.
+        """
         if not uri:
             return False, "Empty URI"
 
-        # Handle data: URIs specially
+        if len(uri) > MAX_URI_LENGTH:
+            return False, "URI exceeds maximum allowed length"
+
         if uri.startswith('data:'):
             return True, ""
 
-        # Check for scheme
         if '://' not in uri:
             return False, f"URI missing scheme: {uri}"
 
-        scheme = uri.split('://')[0].lower()
+        parsed = urlparse(uri)
+        scheme = parsed.scheme.lower()
 
         if scheme in FORBIDDEN_URI_SCHEMES:
             return False, f"Forbidden URI scheme: {scheme} in {uri}"
@@ -107,9 +117,31 @@ class URIValidator:
         if scheme not in ALLOWED_URI_SCHEMES:
             return False, f"Unknown URI scheme: {scheme} in {uri}"
 
-        # Block absolute paths in file URIs
-        if scheme == 'file' and uri.startswith('file:///'):
-            return False, f"File URI not allowed: {uri}"
+        if scheme == 'https':
+            if parsed.username or parsed.password:
+                return False, "Credentials in HTTPS URIs are not allowed"
+            if not parsed.hostname:
+                return False, "HTTPS URI missing hostname"
+            safe, reason = self._validate_network_host(parsed.hostname)
+            if not safe:
+                return False, reason
+
+        return True, ""
+
+    def _validate_network_host(self, hostname: str) -> Tuple[bool, str]:
+        """Reject localhost and non-public literal IP addresses."""
+        host = hostname.rstrip('.').lower()
+
+        if host in LOCAL_HOSTNAMES or host.endswith('.localhost'):
+            return False, f"Local hostname is not allowed: {hostname}"
+
+        try:
+            address = ipaddress.ip_address(host)
+        except ValueError:
+            return True, ""
+
+        if not address.is_global:
+            return False, f"Non-public IP address is not allowed: {hostname}"
 
         return True, ""
 
