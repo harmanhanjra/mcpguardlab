@@ -16,6 +16,7 @@ MCP is the emerging standard for connecting LLMs to external tools. MCPGuardLab 
 - **P2: Parameter Sanitization** — Shell/SQL injection blocking
 - **P3: URI Validation** — Scheme enforcement (no file://)
 - **P4: Prompt Injection Detection** — Pattern matching
+- **P5: Recursive Argument Validation** — Nested payload checks with depth/size limits
 - **M1/M2: Mutation Tests** — Prove harness non-vacuity
 
 ## Installation

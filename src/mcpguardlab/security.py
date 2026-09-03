@@ -2,9 +2,8 @@
 
 import ipaddress
 import re
-from typing import List, Optional, Tuple
+from typing import Any, Iterator, List, Tuple
 from urllib.parse import urlparse
-
 
 # Safe tool name pattern: alphanumeric and underscores only
 TOOL_NAME_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
@@ -19,6 +18,8 @@ ALLOWED_URI_SCHEMES = {'mcp', 'https', 'data', 'mcp+ws', 'mcp+wss'}
 FORBIDDEN_URI_SCHEMES = {'file', 'http', 'gopher', 'dict', 'ftp', 'ssh', 'telnet'}
 LOCAL_HOSTNAMES = {'localhost', 'localhost.localdomain', 'ip6-localhost', 'ip6-loopback'}
 MAX_URI_LENGTH = 8192
+MAX_PARAM_DEPTH = 20
+MAX_PARAM_NODES = 10_000
 
 # Known prompt injection patterns
 INJECTION_PATTERNS = [
@@ -81,10 +82,8 @@ class ParamSanitizer:
 
     def _has_dangerous_uri(self, value: str) -> bool:
         """Check if value contains a dangerous URI scheme."""
-        for scheme in FORBIDDEN_URI_SCHEMES:
-            if value.startswith(f"{scheme}://"):
-                return True
-        return False
+        normalized = value.lstrip().casefold()
+        return any(normalized.startswith(f"{scheme}://") for scheme in FORBIDDEN_URI_SCHEMES)
 
 
 class URIValidator:
@@ -191,21 +190,68 @@ class SecurityGuard:
         if not valid:
             return False, f"Invalid tool: {error}"
 
-        # Sanitize arguments
-        for key, value in list(arguments.items()):
-            if isinstance(value, str):
-                # Check for prompt injection in prompt-like parameters
-                if key in ("prompt", "query", "message", "text"):
-                    safe, patterns = self.prompt_cleaner.detect(value)
-                    if not safe:
-                        return False, f"Prompt injection detected in '{key}'"
+        if not isinstance(arguments, dict):
+            return False, "Tool arguments must be an object"
 
-                sanitized, was_dangerous = self.param_sanitizer.sanitize(value)
+        try:
+            values = self._walk_arguments(arguments)
+            for path, prompt_like, value in values:
+                if prompt_like:
+                    safe, _ = self.prompt_cleaner.detect(value)
+                    if not safe:
+                        return False, f"Prompt injection detected in '{path}'"
+
+                _, was_dangerous = self.param_sanitizer.sanitize(value)
                 if was_dangerous:
-                    return False, f"Dangerous parameter value in '{key}'"
-                arguments[key] = sanitized
+                    return False, f"Dangerous parameter value in '{path}'"
+        except ValueError as exc:
+            return False, str(exc)
 
         return True, ""
+
+    def _walk_arguments(self, arguments: dict) -> Iterator[Tuple[str, bool, str]]:
+        """Yield every nested string with bounded traversal.
+
+        MCP arguments are JSON-like and may contain arbitrarily nested objects and
+        arrays. Security checks must cover the full structure without allowing a
+        deeply nested or oversized payload to exhaust the process.
+        """
+        prompt_keys = {"prompt", "query", "message", "text"}
+        stack: List[Tuple[Any, str, bool, int]] = [(arguments, "$", False, 0)]
+        seen_containers = set()
+        nodes = 0
+
+        while stack:
+            value, path, prompt_like, depth = stack.pop()
+            nodes += 1
+            if nodes > MAX_PARAM_NODES:
+                raise ValueError("Tool arguments exceed maximum size")
+            if depth > MAX_PARAM_DEPTH:
+                raise ValueError("Tool arguments exceed maximum nesting depth")
+
+            if isinstance(value, str):
+                yield path, prompt_like, value
+                continue
+
+            if isinstance(value, dict):
+                container_id = id(value)
+                if container_id in seen_containers:
+                    raise ValueError("Tool arguments contain a circular reference")
+                seen_containers.add(container_id)
+                for key, child in value.items():
+                    if not isinstance(key, str):
+                        raise ValueError("Tool argument object keys must be strings")
+                    child_path = f"{path}.{key}"
+                    stack.append((child, child_path, key.casefold() in prompt_keys, depth + 1))
+                continue
+
+            if isinstance(value, (list, tuple)):
+                container_id = id(value)
+                if container_id in seen_containers:
+                    raise ValueError("Tool arguments contain a circular reference")
+                seen_containers.add(container_id)
+                for index, child in enumerate(value):
+                    stack.append((child, f"{path}[{index}]", prompt_like, depth + 1))
 
     def validate_resource_uri(self, uri: str) -> Tuple[bool, str]:
         """Validate a resource URI. Returns (is_valid, error_message)."""
