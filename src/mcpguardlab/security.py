@@ -10,7 +10,9 @@ TOOL_NAME_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
 
 # Dangerous patterns for parameter sanitization
 SHELL_METACHARACTERS = re.compile(r'[;|&$`\\"]')
-PATH_TRAVERSAL = re.compile(r'\.\./')
+# Reject parent-directory segments before downstream tools can normalize or
+# percent-decode them. Cover POSIX, Windows, and single-encoded separators.
+PATH_TRAVERSAL = re.compile(r'(?:\.\.|%2e%2e)(?:[/\\]|%2f|%5c)', re.IGNORECASE)
 SQL_INJECTION = re.compile(r"('|\")?(--|#|;|' OR '|'|\" OR \")", re.IGNORECASE)
 
 # Allowed URI schemes

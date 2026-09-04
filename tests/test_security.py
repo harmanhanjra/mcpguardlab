@@ -65,9 +65,22 @@ class TestParamSanitizer:
         """Path traversal should be blocked."""
         sanitizer = ParamSanitizer()
 
-        cleaned, was_cleaned = sanitizer.sanitize("../../../../etc/shadow")
-        assert was_cleaned
-        assert cleaned == "", "Path traversal should be blocked entirely"
+        for payload in [
+            "../../../../etc/shadow",
+            r"..\..\Windows\system.ini",
+            "%2e%2e%2fetc%2fpasswd",
+            "%2E%2E%5CWindows%5Cwin.ini",
+        ]:
+            cleaned, was_cleaned = sanitizer.sanitize(payload)
+            assert was_cleaned, f"Traversal should be detected: {payload}"
+            assert cleaned == "", "Path traversal should be blocked entirely"
+
+    def test_non_traversal_dot_sequences_are_allowed(self):
+        sanitizer = ParamSanitizer()
+        for payload in ["report..txt", "wait...", "percent%2evalue"]:
+            cleaned, was_dangerous = sanitizer.sanitize(payload)
+            assert not was_dangerous
+            assert cleaned == payload
 
     def test_safe_params_unchanged(self):
         """Safe parameters should remain unchanged."""

@@ -13,7 +13,8 @@ MCP is the emerging standard for connecting LLMs to external tools. MCPGuardLab 
 ## Features
 
 - **P1: Tool Name Validation** — Regex allowlist enforcement
-- **P2: Parameter Sanitization** — Shell/SQL injection blocking
+- **P2: Parameter Sanitization** — Shell/SQL injection and cross-platform,
+  percent-encoded path-traversal blocking
 - **P3: URI Validation** — Scheme enforcement (no file://)
 - **P4: Prompt Injection Detection** — Pattern matching
 - **P5: Recursive Argument Validation** — Nested payload checks with depth/size limits
